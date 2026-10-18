@@ -1,0 +1,28 @@
+POST http://localhost:5000/api/auth/register
+Content-Type: application/json
+
+{
+  "full_name": "Test User",
+  "email": "test@gmail.com",
+  "password": "123456password",
+  "role": "USER"
+}
+
+### Login User Test
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@gmail.com",
+  "password": "123456password"
+}
+### Add New Equipment Test
+POST http://localhost:5000/api/equipment
+Content-Type: application/json
+
+{
+  "name": "Digital Oscilloscope",
+  "category": "Electronics",
+  "description": "100MHz 2 Channel Oscilloscope",
+  "serial_number": "OSC-100236"
+}
