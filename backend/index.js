@@ -507,7 +507,8 @@ app.get('/api/bookings', authenticateToken, async (req, res) => {
   try {
     const query = `
       SELECT b.id, b.user_id, u.full_name as student_name, e.name as equipment, 
-             e.serial_number, b.start_time, b.end_time, b.status
+             e.serial_number, b.start_time, b.end_time, b.status,
+             COALESCE(b.handover_status, 'NONE') as handover_status
       FROM bookings b
       LEFT JOIN users u ON b.user_id = u.id
       LEFT JOIN equipment e ON b.equipment_id = e.id
@@ -525,7 +526,8 @@ app.get('/api/users/:userId/bookings', authenticateToken, requireAdmin, async (r
   try {
     const { userId } = req.params;
     const query = `
-      SELECT b.id, e.name as equipment, e.serial_number, b.start_time, b.end_time, b.status
+      SELECT b.id, e.name as equipment, e.serial_number, b.start_time, b.end_time, b.status,
+             COALESCE(b.handover_status, 'NONE') as handover_status
       FROM bookings b
       JOIN equipment e ON b.equipment_id = e.id
       WHERE b.user_id = $1
@@ -567,8 +569,8 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     }
 
     const newBooking = await pool.query(
-      'INSERT INTO bookings (user_id, equipment_id, start_time, end_time, status) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [user_id, equipment_id, start_time, end_time, 'PENDING']
+      'INSERT INTO bookings (user_id, equipment_id, start_time, end_time, status, handover_status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [user_id, equipment_id, start_time, end_time, 'PENDING', 'NONE']
     );
 
     await pool.query(
@@ -579,6 +581,53 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
     res.status(201).json(newBooking.rows[0]);
   } catch (err) {
     console.error("BOOKING CREATE ERROR:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// STUDENT HANDOVER: Student equipment එක ආපහු භාර දුන් බව Admin ට දැනුම් දීම (Stock වෙනස් නොවේ)
+app.patch('/api/bookings/:id/handover', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bookingCheck = await pool.query('SELECT * FROM bookings WHERE id = $1', [id]);
+    if (bookingCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Booking not found.' });
+    }
+
+    const booking = bookingCheck.rows[0];
+    if (Number(booking.user_id) !== Number(req.user.id)) {
+      return res.status(403).json({ error: 'Access denied. You can only handover your own equipment.' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE bookings SET handover_status = 'HANDED_OVER' WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error("HANDOVER ERROR:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ADMIN CONFIRM RETURN: Admin භාරගත් බව තහවුරු කර අදාළ Student ට දැනුම් දීම (Stock වෙනස් නොවේ)
+app.patch('/api/bookings/:id/confirm-return', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const bookingCheck = await pool.query('SELECT * FROM bookings WHERE id = $1', [id]);
+    if (bookingCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Booking not found.' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE bookings SET handover_status = 'CONFIRMED' WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error("CONFIRM RETURN ERROR:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -860,9 +909,17 @@ const ensureFeedbacksTable = async () => {
   `);
 };
 
+const ensureHandoverColumn = async () => {
+  await pool.query(`
+    ALTER TABLE bookings
+    ADD COLUMN IF NOT EXISTS handover_status VARCHAR(50) DEFAULT 'NONE'
+  `);
+};
+
 const startServer = async () => {
   try {
     await ensureFeedbacksTable();
+    await ensureHandoverColumn();
   } catch (err) {
     console.error("TABLE INIT WARNING:", err.message);
   }

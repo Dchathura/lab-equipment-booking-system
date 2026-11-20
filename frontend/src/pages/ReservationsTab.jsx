@@ -21,6 +21,8 @@ const ReservationsTab = ({
   userBookings,
   handleUpdateStatus,
   handleCancelBooking,
+  handleHandoverEquipment,
+  handleConfirmReturn,
   errorMsg,
   successMsg
 }) => {
@@ -91,6 +93,8 @@ const ReservationsTab = ({
         <h3 style={styles.cardTitleLight}>
           {isAdmin ? '📋 All Student Booking Requests' : '📋 My Reservation Requests'}
         </h3>
+        {isAdmin && errorMsg && <div style={styles.errorAlert}>{errorMsg}</div>}
+        {isAdmin && successMsg && <div style={styles.successAlert}>{successMsg}</div>}
         <table style={styles.table}>
           <thead>
             <tr style={styles.tableHeaderRowLight}>
@@ -109,41 +113,79 @@ const ReservationsTab = ({
                 <td colSpan={isAdmin ? 7 : 6} style={{ ...styles.tdLight, textAlign: 'center' }}>No booking records found.</td>
               </tr>
             ) : (
-              userBookings.map(b => (
-                <tr key={b.id} style={styles.tableRowLight}>
-                  <td style={styles.tdLight}>#{b.id}</td>
-                  {isAdmin && <td style={styles.tdLight}><strong style={{ color: '#0f172a' }}>{b.student_name}</strong></td>}
-                  <td style={styles.tdLight}>{b.equipment_name || b.equipment}</td>
-                  <td style={styles.tdLight}>{new Date(b.start_time).toLocaleString()}</td>
-                  <td style={styles.tdLight}>{new Date(b.end_time).toLocaleString()}</td>
-                  <td style={styles.tdLight}>
-                    <span style={
-                      b.status === 'APPROVED' ? styles.statusApproved : 
-                      b.status === 'REJECTED' || b.status === 'CANCELLED' ? styles.statusRejected : styles.statusPending
-                    }>
-                      {b.status}
-                    </span>
-                  </td>
-                  <td style={styles.tdLight}>
-                    {isAdmin ? (
-                      b.status === 'PENDING' ? (
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button onClick={() => handleUpdateStatus(b.id, 'APPROVED')} style={styles.approveBtn}>Approve</button>
-                          <button onClick={() => handleUpdateStatus(b.id, 'REJECTED')} style={styles.rejectBtn}>Reject</button>
-                        </div>
+              userBookings.map(b => {
+                const handoverState = b.handover_status || 'NONE';
+
+                return (
+                  <tr key={b.id} style={styles.tableRowLight}>
+                    <td style={styles.tdLight}>#{b.id}</td>
+                    {isAdmin && <td style={styles.tdLight}><strong style={{ color: '#0f172a' }}>{b.student_name}</strong></td>}
+                    <td style={styles.tdLight}>{b.equipment_name || b.equipment}</td>
+                    <td style={styles.tdLight}>{new Date(b.start_time).toLocaleString()}</td>
+                    <td style={styles.tdLight}>{new Date(b.end_time).toLocaleString()}</td>
+                    <td style={styles.tdLight}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                        <span style={
+                          b.status === 'APPROVED' ? styles.statusApproved : 
+                          b.status === 'REJECTED' || b.status === 'CANCELLED' ? styles.statusRejected : styles.statusPending
+                        }>
+                          {b.status}
+                        </span>
+                        {handoverState === 'HANDED_OVER' && (
+                          <span style={{ backgroundColor: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '2px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' }}>
+                            📦 Handed Over
+                          </span>
+                        )}
+                        {handoverState === 'CONFIRMED' && (
+                          <span style={{ backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '2px 7px', borderRadius: '6px', fontSize: '11px', fontWeight: '700' }}>
+                            ✅ Return Confirmed
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={styles.tdLight}>
+                      {isAdmin ? (
+                        b.status === 'PENDING' ? (
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button onClick={() => handleUpdateStatus(b.id, 'APPROVED')} style={styles.approveBtn}>Approve</button>
+                            <button onClick={() => handleUpdateStatus(b.id, 'REJECTED')} style={styles.rejectBtn}>Reject</button>
+                          </div>
+                        ) : handoverState === 'HANDED_OVER' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmReturn && handleConfirmReturn(b.id)}
+                            style={{ backgroundColor: '#0284c7', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                          >
+                            ✅ Confirm Return
+                          </button>
+                        ) : handoverState === 'CONFIRMED' ? (
+                          <span style={{ fontSize: '12px', color: '#15803d', fontWeight: '600' }}>Return Confirmed</span>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#94a3b8' }}>Processed</span>
+                        )
                       ) : (
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>Processed</span>
-                      )
-                    ) : (
-                      b.status === 'PENDING' ? (
-                        <button onClick={() => handleCancelBooking(b.id)} style={styles.cancelBookingBtn}>🚫 Cancel Request</button>
-                      ) : (
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{b.status === 'APPROVED' ? 'Active' : 'Completed'}</span>
-                      )
-                    )}
-                  </td>
-                </tr>
-              ))
+                        b.status === 'PENDING' ? (
+                          <button onClick={() => handleCancelBooking(b.id)} style={styles.cancelBookingBtn}>🚫 Cancel Request</button>
+                        ) : b.status === 'APPROVED' && handoverState === 'NONE' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleHandoverEquipment && handleHandoverEquipment(b.id)}
+                            style={{ backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
+                          >
+                            📦 Handover Equipment
+                          </button>
+                        ) : handoverState === 'HANDED_OVER' ? (
+                          <span style={{ fontSize: '12px', color: '#b45309', fontWeight: '600' }}>⏳ Awaiting Admin Confirm</span>
+                        ) : handoverState === 'CONFIRMED' ? (
+                          <span style={{ fontSize: '12px', color: '#15803d', fontWeight: '600' }}>✅ Return Confirmed</span>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#94a3b8' }}>Completed</span>
+                        )
+                      )}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

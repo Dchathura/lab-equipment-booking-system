@@ -118,10 +118,12 @@ function App() {
     return identity ? `lab_flow_reminded_bookings_${identity}` : null;
   }, []);
 
-  // Reusable helper for adding new notifications (can also be extended for future features)
+  // Reusable helper for adding unique, deduplicated notifications
   const pushNotification = useCallback((targetUserOrMatcher, newItem) => {
+    const dedupKey = newItem.dedupKey || newItem.id || null;
     const entry = {
       id: newItem.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      dedupKey,
       type: newItem.type || 'GENERAL',
       title: newItem.title || 'Notification',
       message: newItem.message || '',
@@ -151,14 +153,22 @@ function App() {
       return false;
     };
 
+    const isDuplicate = (list) => {
+      if (!Array.isArray(list)) return false;
+      return list.some(
+        (n) =>
+          n.id === entry.id ||
+          (dedupKey && (n.dedupKey === dedupKey || n.id === dedupKey))
+      );
+    };
+
     // Save to target user's isolated localStorage bucket
     if (targetUserOrMatcher && typeof targetUserOrMatcher === 'object') {
       const key = getUserNotifStorageKey(targetUserOrMatcher);
       if (key) {
         try {
           const existing = JSON.parse(localStorage.getItem(key) || '[]');
-          const alreadyExists = existing.some((n) => n.id === entry.id);
-          if (!alreadyExists) {
+          if (!isDuplicate(existing)) {
             const nextList = [entry, ...existing].slice(0, 40);
             localStorage.setItem(key, JSON.stringify(nextList));
           }
@@ -170,7 +180,7 @@ function App() {
 
     if (matchesCurrentUser()) {
       setNotifications((prev) => {
-        if (prev.some((n) => n.id === entry.id)) return prev;
+        if (isDuplicate(prev)) return prev;
         const updated = [entry, ...prev].slice(0, 40);
         const key = getUserNotifStorageKey(user);
         if (key) {
@@ -326,6 +336,7 @@ function App() {
           if (!isAdminUser && isOwner && currStatus === 'Reviewed') {
             pushNotification(user, {
               id: `fb_reviewed_${fb.id}`,
+              dedupKey: `fb_reviewed_${fb.id}`,
               type: 'FEEDBACK_REVIEWED',
               title: '💬 Feedback Reviewed by Admin',
               message: `Your feedback on "${fbTarget}" has been marked as Reviewed.`
@@ -346,6 +357,7 @@ function App() {
               const fbTarget = fb.target_equipment || fb.target || 'General Lab Feedback';
               pushNotification('ALL_ADMINS', {
                 id: notifId,
+                dedupKey: notifId,
                 type: 'NEW_FEEDBACK',
                 title: '📝 New Student Feedback',
                 message: `${fbStudentName} submitted feedback for "${fbTarget}".`
@@ -366,7 +378,7 @@ function App() {
     };
   }, [token, user, pushNotification]);
 
-  // Real-time Booking & 24-Hour End Time Reminder Watcher (User-isolated + Admin alerts)
+  // Real-time Booking, Handover/Return Confirmation & 24-Hour End Time Reminder Watcher
   useEffect(() => {
     if (!user || !Array.isArray(bookings)) return;
 
@@ -379,6 +391,7 @@ function App() {
     bookings.forEach((b) => {
       const prevStatus = seenBookingStateRef.current[b.id];
       const currStatus = b.status;
+      const currHandover = b.handover_status || 'NONE';
 
       const isOwner =
         (b.user_id !== undefined && b.user_id !== null && Number(b.user_id) === Number(user.id)) ||
@@ -390,6 +403,7 @@ function App() {
         if (!isAdminUser && isOwner && (currStatus === 'APPROVED' || currStatus === 'REJECTED')) {
           pushNotification(user, {
             id: `booking_status_${b.id}_${currStatus}`,
+            dedupKey: `booking_status_${b.id}_${currStatus}`,
             type: 'BOOKING_STATUS',
             title: currStatus === 'APPROVED' ? '✅ Booking Approved!' : '❌ Booking Rejected',
             message: `Your reservation for "${b.equipment || 'equipment'}" (#${b.id}) was ${currStatus.toLowerCase()} by Admin.`
@@ -405,9 +419,40 @@ function App() {
           seenBookingStateRef.current[pendingKey] = true;
           pushNotification('ALL_ADMINS', {
             id: pendingKey,
+            dedupKey: pendingKey,
             type: 'NEW_BOOKING',
             title: '📅 New Equipment Booking',
             message: `${b.student_name || 'A student'} requested "${b.equipment || 'equipment'}" (#${b.id}).`
+          });
+        }
+      }
+
+      // 📦 Unique Admin Notification: Student handed over equipment for return
+      if (isAdminUser && currHandover === 'HANDED_OVER') {
+        const handoverKey = `admin_handover_${b.id}`;
+        if (!seenBookingStateRef.current[handoverKey]) {
+          seenBookingStateRef.current[handoverKey] = true;
+          pushNotification('ALL_ADMINS', {
+            id: handoverKey,
+            dedupKey: handoverKey,
+            type: 'EQUIPMENT_HANDOVER',
+            title: '📦 Equipment Handed Over',
+            message: `${b.student_name || 'Student'} handed over "${b.equipment || 'equipment'}" (Booking #${b.id}). Please confirm return.`
+          });
+        }
+      }
+
+      // ✅ Unique Student Notification: Admin confirmed return for THIS specific user only
+      if (!isAdminUser && isOwner && currHandover === 'CONFIRMED') {
+        const confirmedKey = `user_return_confirmed_${b.id}`;
+        if (!seenBookingStateRef.current[confirmedKey]) {
+          seenBookingStateRef.current[confirmedKey] = true;
+          pushNotification(user, {
+            id: confirmedKey,
+            dedupKey: confirmedKey,
+            type: 'RETURN_CONFIRMED',
+            title: '✅ Return Confirmed by Admin',
+            message: `Admin confirmed receiving your returned "${b.equipment || 'equipment'}" (Booking #${b.id}).`
           });
         }
       }
@@ -424,6 +469,7 @@ function App() {
           const roundedHours = Math.max(1, Math.ceil(hoursLeft));
           pushNotification(user, {
             id: reminderId,
+            dedupKey: reminderId,
             type: 'END_TIME_REMINDER',
             title: '⏰ Booking Ending Soon',
             message: `Your booking for "${b.equipment || 'equipment'}" ends in about ${roundedHours} hour(s). Please return it on time.`
@@ -474,6 +520,7 @@ function App() {
         if (u.email !== user.email) {
           pushNotification('ALL_ADMINS', {
             id: `new_user_${u.id}`,
+            dedupKey: `new_user_${u.id}`,
             type: 'NEW_USER',
             title: '👤 New User Registered',
             message: `${u.full_name || u.email} (${u.email}) joined as ${u.role || 'STUDENT'}.`
@@ -686,7 +733,7 @@ function App() {
     }
 
     try {
-      await axios.post(`${API_BASE}/api/bookings`, {
+      const createdRes = await axios.post(`${API_BASE}/api/bookings`, {
         user_id: user.id,
         equipment_id: selectedEquipment,
         start_time: startTime,
@@ -695,12 +742,15 @@ function App() {
         headers: { Authorization: `Bearer ${token}` }
       });
 
+      const createdBooking = createdRes.data || {};
+      const bookingRefId = createdBooking.id || Date.now();
       const eqObj = equipment.find((item) => String(item.id) === String(selectedEquipment));
       const eqLabel = eqObj ? eqObj.name : `Equipment #${selectedEquipment}`;
 
       // Notify submitting user (confirmation)
       pushNotification(user, {
-        id: `user_booking_sent_${Date.now()}`,
+        id: `user_booking_sent_${bookingRefId}`,
+        dedupKey: `user_booking_sent_${bookingRefId}`,
         type: 'BOOKING_SUBMITTED',
         title: '📨 Booking Request Sent',
         message: `Your request for "${eqLabel}" has been submitted and is pending Admin approval.`
@@ -708,7 +758,8 @@ function App() {
 
       // Notify Admin(s)
       pushNotification('ALL_ADMINS', {
-        id: `admin_booking_req_${Date.now()}`,
+        id: `admin_booking_req_${bookingRefId}`,
+        dedupKey: `admin_booking_req_${bookingRefId}`,
         type: 'NEW_BOOKING',
         title: '📅 New Equipment Booking',
         message: `${user.full_name || user.email} requested "${eqLabel}".`
@@ -722,6 +773,74 @@ function App() {
       fetchEquipment();
     } catch (err) {
       setErrorMsg(err.response?.data?.error || 'Failed to submit reservation request.');
+    }
+  };
+
+  // 📦 Student: Mark booked equipment as handed over back to Admin (Does NOT alter stock)
+  const handleHandoverEquipment = async (bookingId) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await axios.patch(
+        `${API_BASE}/api/bookings/${bookingId}/handover`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const targetBooking = bookings.find((b) => Number(b.id) === Number(bookingId));
+      const eqNameLabel = targetBooking?.equipment || `Booking #${bookingId}`;
+      const studentLabel = targetBooking?.student_name || user?.full_name || user?.email || 'Student';
+
+      // Unique notification to Admins only
+      pushNotification('ALL_ADMINS', {
+        id: `admin_handover_${bookingId}`,
+        dedupKey: `admin_handover_${bookingId}`,
+        type: 'EQUIPMENT_HANDOVER',
+        title: '📦 Equipment Handed Over',
+        message: `${studentLabel} handed over "${eqNameLabel}" (Booking #${bookingId}). Please confirm return.`
+      });
+
+      seenBookingStateRef.current[`admin_handover_${bookingId}`] = true;
+      setSuccessMsg(`Handover submitted for Booking #${bookingId}. Waiting for Admin confirmation.`);
+      fetchBookings();
+    } catch (err) {
+      setErrorMsg(err.response?.data?.error || 'Failed to submit equipment handover.');
+    }
+  };
+
+  // ✅ Admin: Confirm return for a specific user's handed-over equipment (Does NOT alter stock)
+  const handleConfirmReturn = async (bookingId) => {
+    setErrorMsg('');
+    setSuccessMsg('');
+    try {
+      await axios.patch(
+        `${API_BASE}/api/bookings/${bookingId}/confirm-return`,
+        {},
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const targetBooking = bookings.find((b) => Number(b.id) === Number(bookingId));
+      if (targetBooking) {
+        const matchedUser = usersList.find((u) => Number(u.id) === Number(targetBooking.user_id));
+        const targetUserObj = {
+          id: targetBooking.user_id,
+          email: matchedUser?.email || targetBooking.email
+        };
+
+        // Unique notification to THIS specific student only
+        pushNotification(targetUserObj, {
+          id: `user_return_confirmed_${bookingId}`,
+          dedupKey: `user_return_confirmed_${bookingId}`,
+          type: 'RETURN_CONFIRMED',
+          title: '✅ Return Confirmed by Admin',
+          message: `Admin confirmed receiving your returned "${targetBooking.equipment || 'equipment'}" (Booking #${bookingId}).`
+        });
+      }
+
+      setSuccessMsg(`Return confirmed for Booking #${bookingId}.`);
+      fetchBookings();
+    } catch (err) {
+      setErrorMsg(err.response?.data?.error || 'Failed to confirm return.');
     }
   };
 
@@ -740,6 +859,7 @@ function App() {
           { id: targetBooking.user_id, email: targetBooking.email },
           {
             id: `status_msg_${bookingId}_${newStatus}_${Date.now()}`,
+            dedupKey: `status_msg_${bookingId}_${newStatus}`,
             type: 'BOOKING_STATUS',
             title: newStatus === 'APPROVED' ? '✅ Booking Approved!' : '❌ Booking Rejected',
             message: `Your booking for "${targetBooking.equipment || 'equipment'}" (#${bookingId}) was ${newStatus.toLowerCase()} by Admin.`
@@ -1415,6 +1535,8 @@ function App() {
                 userBookings={userBookings}
                 handleUpdateStatus={handleUpdateStatus}
                 handleCancelBooking={handleCancelBooking}
+                handleHandoverEquipment={handleHandoverEquipment}
+                handleConfirmReturn={handleConfirmReturn}
                 errorMsg={activeTab === 'Reservations' ? errorMsg : ''}
                 successMsg={activeTab === 'Reservations' ? successMsg : ''}
               />
