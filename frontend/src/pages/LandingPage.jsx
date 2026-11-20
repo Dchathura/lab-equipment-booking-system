@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGoogleLogin } from '@react-oauth/google';
+import axios from 'axios';
 import DynamicAnimationStyles from '../components/DynamicAnimationStyles';
 import { landingStyles } from '../components/DynamicStyles';
+
+const API_BASE = 'http://localhost:5000';
 
 const LandingPage = ({
   isLoginView,
@@ -14,8 +17,14 @@ const LandingPage = ({
   setPassword,
   role,
   setRole,
+  otpCode,
+  setOtpCode,
+  handleSendOtp,
+  isSendingOtp,
+  otpSent,
   handleLogin,
   handleRegister,
+  onGoogleSuccess,
   errorMsg,
   successMsg,
   setErrorMsg,
@@ -27,9 +36,78 @@ const LandingPage = ({
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
+  const [resetOtp, setResetOtp] = useState('');
+  const [newResetPassword, setNewResetPassword] = useState('');
+  const [confirmResetPassword, setConfirmResetPassword] = useState('');
+  const [resetOtpSent, setResetOtpSent] = useState(false);
+  const [isSendingResetOtp, setIsSendingResetOtp] = useState(false);
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetError, setResetError] = useState('');
   const [resetMsg, setResetMsg] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [forgotResendCooldown, setForgotResendCooldown] = useState(0);
 
-  // Sereal Google Login Handler using @react-oauth/google
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  useEffect(() => {
+    if (forgotResendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setForgotResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [forgotResendCooldown]);
+
+  // Password strength criteria matching backend/index.js
+  const passwordChecks = {
+    length: password.length >= 8,
+    letter: /[A-Za-z]/.test(password),
+    number: /[0-9]/.test(password),
+    special: /[!@#$%^&*(),.?":{}|<>_\-+=~`[\]\\;/']/.test(password),
+  };
+
+  const isPasswordValid =
+    passwordChecks.length &&
+    passwordChecks.letter &&
+    passwordChecks.number &&
+    passwordChecks.special;
+
+  const onTriggerSendOtp = async () => {
+    if (!email || !email.includes('@')) {
+      if (setErrorMsg) setErrorMsg('Please enter a valid email address first.');
+      return;
+    }
+    if (handleSendOtp) {
+      const ok = await handleSendOtp();
+      if (ok) {
+        setResendCooldown(60);
+      }
+    }
+  };
+
+  const onRegisterSubmit = (e) => {
+    e.preventDefault();
+    if (!isPasswordValid) {
+      if (setErrorMsg) {
+        setErrorMsg('Please meet all password requirements before registering.');
+      }
+      return;
+    }
+    if (!otpSent || !otpCode || otpCode.trim().length !== 6) {
+      if (setErrorMsg) {
+        setErrorMsg('Please click "Send Code" and enter the 6-digit verification code sent to your email.');
+      }
+      return;
+    }
+    handleRegister(e);
+  };
+
+  // Real Google Login Handler using @react-oauth/google
   const loginWithGoogle = useGoogleLogin({
     onSuccess: async (tokenResponse) => {
       try {
@@ -37,10 +115,12 @@ const LandingPage = ({
           headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
         });
         const userData = await res.json();
-        
-        console.log('Google User Data:', userData);
+
         if (setSuccessMsg) {
           setSuccessMsg(`Welcome, ${userData.name}! Logged in via Google.`);
+        }
+        if (onGoogleSuccess) {
+          await onGoogleSuccess(userData, tokenResponse.access_token);
         }
       } catch (err) {
         if (setErrorMsg) setErrorMsg('Failed to fetch user details from Google.');
@@ -66,15 +146,92 @@ const LandingPage = ({
     }
   };
 
-  const handleForgotPassword = (e) => {
+  const openForgotPasswordModal = () => {
+    setResetEmail(email || '');
+    setResetOtp('');
+    setNewResetPassword('');
+    setConfirmResetPassword('');
+    setResetOtpSent(false);
+    setResetError('');
+    setResetMsg('');
+    setShowForgotModal(true);
+  };
+
+  const closeForgotPasswordModal = () => {
+    setShowForgotModal(false);
+    setResetError('');
+    setResetMsg('');
+    setResetOtp('');
+    setNewResetPassword('');
+    setConfirmResetPassword('');
+    setResetOtpSent(false);
+    setForgotResendCooldown(0);
+  };
+
+  const handleSendResetOtp = async () => {
+    setResetError('');
+    setResetMsg('');
+    const trimmedEmail = resetEmail.trim();
+    if (!trimmedEmail || !trimmedEmail.includes('@')) {
+      setResetError('Please enter a valid registered email address.');
+      return;
+    }
+
+    setIsSendingResetOtp(true);
+    try {
+      const res = await axios.post(`${API_BASE}/api/auth/forgot-password/send-otp`, {
+        email: trimmedEmail
+      });
+      setResetOtpSent(true);
+      setForgotResendCooldown(60);
+      setResetMsg(res.data?.message || 'Reset code sent to your email. Valid for 2 minutes.');
+    } catch (err) {
+      setResetError(err.response?.data?.error || 'Failed to send password reset code.');
+    } finally {
+      setIsSendingResetOtp(false);
+    }
+  };
+
+  const handleForgotPassword = async (e) => {
     e.preventDefault();
-    if (!resetEmail) return;
-    setResetMsg(`Password reset link sent to ${resetEmail}! Please check your email.`);
-    setTimeout(() => {
-      setShowForgotModal(false);
-      setResetMsg('');
-      setResetEmail('');
-    }, 3000);
+    setResetError('');
+    setResetMsg('');
+
+    if (!resetOtpSent) {
+      await handleSendResetOtp();
+      return;
+    }
+
+    if (!resetOtp || resetOtp.trim().length !== 6) {
+      setResetError('Please enter the 6-digit verification code sent to your email.');
+      return;
+    }
+
+    if (newResetPassword !== confirmResetPassword) {
+      setResetError('New passwords do not match.');
+      return;
+    }
+
+    setIsResettingPassword(true);
+    try {
+      const res = await axios.post(`${API_BASE}/api/auth/forgot-password/reset`, {
+        email: resetEmail.trim(),
+        otp: resetOtp.trim(),
+        newPassword: newResetPassword
+      });
+      const doneMsg = res.data?.message || 'Password reset successful! You can now log in.';
+      setResetMsg(doneMsg);
+      setEmail(resetEmail.trim());
+      setPassword('');
+      if (setSuccessMsg) setSuccessMsg(doneMsg);
+      setTimeout(() => {
+        closeForgotPasswordModal();
+      }, 1800);
+    } catch (err) {
+      setResetError(err.response?.data?.error || 'Failed to reset password.');
+    } finally {
+      setIsResettingPassword(false);
+    }
   };
 
   return (
@@ -188,7 +345,7 @@ const LandingPage = ({
                   {isLoginView ? 'Account Login' : 'Create Account'}
                 </h3>
                 <p style={{ margin: 0, color: '#38bdf8', fontSize: '13px', fontWeight: '500' }}>
-                  {isLoginView ? 'Enter your credentials to access your portal' : 'Fill in details below to register'}
+                  {isLoginView ? 'Enter your credentials to access your portal' : 'Verify your email with a 6-digit code to register'}
                 </p>
               </div>
             </div>
@@ -196,7 +353,7 @@ const LandingPage = ({
             {errorMsg && <div style={{ backgroundColor: '#ef444422', border: '1px solid #ef4444', color: '#fca5a5', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', marginBottom: '14px' }}>{errorMsg}</div>}
             {successMsg && <div style={{ backgroundColor: '#10b98122', border: '1px solid #10b981', color: '#6ee7b7', padding: '10px 14px', borderRadius: '10px', fontSize: '13px', marginBottom: '14px' }}>{successMsg}</div>}
 
-            <form onSubmit={isLoginView ? handleLogin : handleRegister} style={{ width: '100%' }}>
+            <form onSubmit={isLoginView ? handleLogin : onRegisterSubmit} style={{ width: '100%' }}>
               {!isLoginView && (
                 <>
                   <div style={landingStyles.inputGroup}>
@@ -212,10 +369,61 @@ const LandingPage = ({
                   </div>
                 </>
               )}
+
               <div style={landingStyles.inputGroup}>
                 <span style={landingStyles.inputIcon}>✉️</span>
-                <input type="email" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} required style={landingStyles.darkInputField} />
+                <input
+                  type="email"
+                  placeholder="Email Address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  style={!isLoginView ? { ...landingStyles.darkInputField, paddingRight: '115px' } : landingStyles.darkInputField}
+                />
+                {!isLoginView && (
+                  <button
+                    type="button"
+                    onClick={onTriggerSendOtp}
+                    disabled={isSendingOtp || resendCooldown > 0}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      padding: '6px 10px',
+                      backgroundColor: resendCooldown > 0 ? '#334155' : '#0284c7',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '11px',
+                      fontWeight: '700',
+                      cursor: isSendingOtp || resendCooldown > 0 ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isSendingOtp
+                      ? 'Sending...'
+                      : resendCooldown > 0
+                        ? `Resend (${resendCooldown}s)`
+                        : otpSent
+                          ? 'Resend Code'
+                          : 'Send Code'}
+                  </button>
+                )}
               </div>
+
+              {!isLoginView && otpSent && (
+                <div style={landingStyles.inputGroup}>
+                  <span style={landingStyles.inputIcon}>🔢</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="Enter 6-Digit Verification Code"
+                    value={otpCode || ''}
+                    onChange={(e) => setOtpCode && setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    required
+                    style={landingStyles.darkInputField}
+                  />
+                </div>
+              )}
 
               <div style={landingStyles.inputGroup}>
                 <span style={landingStyles.inputIcon}>🔒</span>
@@ -243,12 +451,41 @@ const LandingPage = ({
                 </span>
               </div>
 
+              {/* Live Password Strength Checklist (Register View only) */}
+              {!isLoginView && (
+                <div style={{
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #1e293b',
+                  borderRadius: '10px',
+                  padding: '10px 12px',
+                  marginTop: '-4px',
+                  marginBottom: '14px',
+                  fontSize: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px'
+                }}>
+                  <span style={{ color: passwordChecks.length ? '#22c55e' : '#94a3b8' }}>
+                    {passwordChecks.length ? '✓' : '•'} At least 8 characters
+                  </span>
+                  <span style={{ color: passwordChecks.letter ? '#22c55e' : '#94a3b8' }}>
+                    {passwordChecks.letter ? '✓' : '•'} At least 1 letter
+                  </span>
+                  <span style={{ color: passwordChecks.number ? '#22c55e' : '#94a3b8' }}>
+                    {passwordChecks.number ? '✓' : '•'} At least 1 number
+                  </span>
+                  <span style={{ color: passwordChecks.special ? '#22c55e' : '#94a3b8' }}>
+                    {passwordChecks.special ? '✓' : '•'} At least 1 special character (!@#$%^&*)
+                  </span>
+                </div>
+              )}
+
               {/* Forgot Password Link (Login View එකේදී පමණක් පෙන්වයි) */}
               {isLoginView && (
                 <div style={{ textAlign: 'right', marginTop: '-6px', marginBottom: '14px' }}>
                   <button 
                     type="button" 
-                    onClick={() => setShowForgotModal(true)} 
+                    onClick={openForgotPasswordModal} 
                     style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: '12px', cursor: 'pointer', fontWeight: '500' }}
                   >
                     Forgot Password?
@@ -257,7 +494,7 @@ const LandingPage = ({
               )}
 
               <button type="submit" style={landingStyles.brightBlueBtn}>
-                {isLoginView ? 'Login →' : 'Register Account →'}
+                {isLoginView ? 'Login →' : 'Verify & Register Account →'}
               </button>
             </form>
 
@@ -270,7 +507,7 @@ const LandingPage = ({
               <div style={{ flex: 1, height: '1px', backgroundColor: '#334155' }}></div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '15px' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginBottom: '15px' }}>
               <button 
                 type="button" 
                 onClick={() => handleSocialLogin('Google')}
@@ -298,63 +535,22 @@ const LandingPage = ({
                 </svg>
                 Google
               </button>
-
-              <button 
-                type="button" 
-                onClick={() => handleSocialLogin('Facebook')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '9px 12px',
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
-                  borderRadius: '10px',
-                  color: '#f8fafc',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <svg width="16" height="16" fill="#1877f2" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                </svg>
-                Facebook
-              </button>
-
-              <button 
-                type="button" 
-                onClick={() => handleSocialLogin('GitHub')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '6px',
-                  padding: '9px 12px',
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
-                  borderRadius: '10px',
-                  color: '#f8fafc',
-                  fontSize: '12px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <svg width="16" height="16" fill="#ffffff" viewBox="0 0 24 24">
-                  <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-                </svg>
-                GitHub
-              </button>
             </div>
 
             <div style={{ textAlign: 'center', fontSize: '13px' }}>
               <span style={{ color: '#94a3b8' }}>
                 {isLoginView ? "Don't have an account? " : "Already have an account? "}
               </span>
-              <button onClick={() => { setIsLoginView(!isLoginView); setErrorMsg(''); setSuccessMsg(''); }} style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLoginView(!isLoginView);
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                  if (setOtpCode) setOtpCode('');
+                }}
+                style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontWeight: 'bold', textDecoration: 'underline' }}
+              >
                 {isLoginView ? 'Sign up' : 'Log in'}
               </button>
             </div>
@@ -362,7 +558,7 @@ const LandingPage = ({
         </div>
       </main>
 
-      {/* Forgot Password Modal */}
+      {/* Real-Time Forgot Password Modal */}
       {showForgotModal && (
         <div style={{
           position: 'fixed',
@@ -383,25 +579,34 @@ const LandingPage = ({
             borderRadius: '16px',
             padding: '28px',
             width: '90%',
-            maxWidth: '400px',
+            maxWidth: '420px',
             boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
               <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '18px', fontWeight: '700' }}>🔑 Reset Password</h3>
               <button 
-                onClick={() => { setShowForgotModal(false); setResetMsg(''); }}
+                type="button"
+                onClick={closeForgotPasswordModal}
                 style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '18px', cursor: 'pointer' }}
               >
                 ✕
               </button>
             </div>
             
-            <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '18px' }}>
-              Enter your registered email address below and we will send you a password reset link.
+            <p style={{ color: '#94a3b8', fontSize: '13px', marginBottom: '16px' }}>
+              {resetOtpSent
+                ? 'Enter the 6-digit code sent to your email and set your new password.'
+                : 'Enter your registered email address and send a 2-minute verification code.'}
             </p>
 
+            {resetError && (
+              <div style={{ backgroundColor: '#ef444422', border: '1px solid #ef4444', color: '#fca5a5', padding: '10px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px' }}>
+                {resetError}
+              </div>
+            )}
+
             {resetMsg && (
-              <div style={{ backgroundColor: '#10b98122', border: '1px solid #10b981', color: '#6ee7b7', padding: '10px', borderRadius: '8px', fontSize: '12px', marginBottom: '14px' }}>
+              <div style={{ backgroundColor: '#10b98122', border: '1px solid #10b981', color: '#6ee7b7', padding: '10px', borderRadius: '8px', fontSize: '12px', marginBottom: '12px' }}>
                 {resetMsg}
               </div>
             )}
@@ -411,27 +616,92 @@ const LandingPage = ({
                 <span style={landingStyles.inputIcon}>✉️</span>
                 <input 
                   type="email" 
-                  placeholder="Enter your email" 
+                  placeholder="Enter your registered email" 
                   value={resetEmail} 
                   onChange={(e) => setResetEmail(e.target.value)} 
                   required 
                   style={landingStyles.darkInputField} 
                 />
               </div>
+
+              {resetOtpSent && (
+                <>
+                  <div style={landingStyles.inputGroup}>
+                    <span style={landingStyles.inputIcon}>🔢</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="Enter 6-Digit Reset Code"
+                      value={resetOtp}
+                      onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, ''))}
+                      required
+                      style={landingStyles.darkInputField}
+                    />
+                  </div>
+
+                  <div style={landingStyles.inputGroup}>
+                    <span style={landingStyles.inputIcon}>🔒</span>
+                    <input
+                      type="password"
+                      placeholder="New Password (8+ chars, letter, number, symbol)"
+                      value={newResetPassword}
+                      onChange={(e) => setNewResetPassword(e.target.value)}
+                      required
+                      style={landingStyles.darkInputField}
+                    />
+                  </div>
+
+                  <div style={landingStyles.inputGroup}>
+                    <span style={landingStyles.inputIcon}>✅</span>
+                    <input
+                      type="password"
+                      placeholder="Confirm New Password"
+                      value={confirmResetPassword}
+                      onChange={(e) => setConfirmResetPassword(e.target.value)}
+                      required
+                      style={landingStyles.darkInputField}
+                    />
+                  </div>
+                </>
+              )}
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
                 <button 
                   type="button" 
-                  onClick={() => { setShowForgotModal(false); setResetMsg(''); }} 
+                  onClick={closeForgotPasswordModal} 
                   style={{ flex: 1, padding: '10px', backgroundColor: '#334155', border: 'none', borderRadius: '10px', color: '#f8fafc', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
-                  style={{ flex: 1, padding: '10px', backgroundColor: '#0284c7', border: 'none', borderRadius: '10px', color: '#ffffff', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}
-                >
-                  Send Reset Link
-                </button>
+
+                {!resetOtpSent ? (
+                  <button 
+                    type="submit" 
+                    disabled={isSendingResetOtp}
+                    style={{ flex: 1, padding: '10px', backgroundColor: '#0284c7', border: 'none', borderRadius: '10px', color: '#ffffff', cursor: isSendingResetOtp ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}
+                  >
+                    {isSendingResetOtp ? 'Sending Code...' : 'Send Reset Code'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSendResetOtp}
+                      disabled={isSendingResetOtp || forgotResendCooldown > 0}
+                      style={{ padding: '10px 12px', backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '10px', color: '#e2e8f0', cursor: isSendingResetOtp || forgotResendCooldown > 0 ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '12px' }}
+                    >
+                      {forgotResendCooldown > 0 ? `${forgotResendCooldown}s` : 'Resend'}
+                    </button>
+                    <button 
+                      type="submit" 
+                      disabled={isResettingPassword}
+                      style={{ flex: 1, padding: '10px', backgroundColor: '#0284c7', border: 'none', borderRadius: '10px', color: '#ffffff', cursor: isResettingPassword ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}
+                    >
+                      {isResettingPassword ? 'Resetting...' : 'Reset Password'}
+                    </button>
+                  </>
+                )}
               </div>
             </form>
           </div>

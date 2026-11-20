@@ -61,10 +61,42 @@ export const styles = {
   userBadgePill: { backgroundColor: 'rgba(255, 255, 255, 0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 'bold', backdropFilter: 'blur(4px)' },
   bannerActionBtn: { backgroundColor: '#ffffff', color: '#1d4ed8', border: 'none', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
   metricsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '24px' },
-  metricCard1: { padding: '22px', borderRadius: '18px', boxShadow: '0 6px 20px rgba(2, 132, 199, 0.25)', background: 'linear-gradient(135deg, #0284c7, #2563eb, #0d9488)', backgroundSize: '200% 200%', color: '#fff', animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both, colorShiftGradient 6s ease infinite' },
-  metricCard2: { padding: '22px', borderRadius: '18px', boxShadow: '0 6px 20px rgba(22, 163, 74, 0.25)', background: 'linear-gradient(135deg, #16a34a, #059669, #10b981)', backgroundSize: '200% 200%', color: '#fff', animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both, colorShiftGradient 6s ease infinite' },
-  metricCard3: { padding: '22px', borderRadius: '18px', boxShadow: '0 6px 20px rgba(147, 51, 234, 0.25)', background: 'linear-gradient(135deg, #9333ea, #7c3aed, #c084fc)', backgroundSize: '200% 200%', color: '#fff', animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both, colorShiftGradient 6s ease infinite' },
-  metricCard4: { padding: '22px', borderRadius: '18px', boxShadow: '0 6px 20px rgba(234, 88, 12, 0.25)', background: 'linear-gradient(135deg, #ea580c, #d97706, #f59e0b)', backgroundSize: '200% 200%', color: '#fff', animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both, colorShiftGradient 6s ease infinite' },
+ metricCard1: { 
+    padding: '22px', 
+    borderRadius: '18px', 
+    boxShadow: '0 6px 20px rgba(56, 189, 248, 0.15)', 
+    background: 'linear-gradient(135deg, #38bdf8, #60a5fa, #818cf8)', 
+    backgroundSize: '200% 200%', 
+    color: '#fff', 
+    animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both, colorShiftGradient 6s ease infinite' 
+  },
+  metricCard2: { 
+    padding: '22px', 
+    borderRadius: '18px', 
+    boxShadow: '0 6px 20px rgba(52, 211, 153, 0.15)', 
+    background: 'linear-gradient(135deg, #34d399, #10b981, #6ee7b7)', 
+    backgroundSize: '200% 200%', 
+    color: '#fff', 
+    animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.2s both, colorShiftGradient 6s ease infinite' 
+  },
+  metricCard3: { 
+    padding: '22px', 
+    borderRadius: '18px', 
+    boxShadow: '0 6px 20px rgba(192, 132, 252, 0.15)', 
+    background: 'linear-gradient(135deg, #c084fc, #a855f7, #e879f9)', 
+    backgroundSize: '200% 200%', 
+    color: '#fff', 
+    animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both, colorShiftGradient 6s ease infinite' 
+  },
+  metricCard4: { 
+    padding: '22px', 
+    borderRadius: '18px', 
+    boxShadow: '0 6px 20px rgba(251, 146, 60, 0.15)', 
+    background: 'linear-gradient(135deg, #fb923c, #f59e0b, #fde047)', 
+    backgroundSize: '200% 200%', 
+    color: '#fff', 
+    animation: 'slideInHorizontal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.4s both, colorShiftGradient 6s ease infinite' 
+  },
   metricHeader: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: 'bold' },
   metricVal: { fontSize: '34px', fontWeight: '800', margin: '8px 0', color: '#ffffff' },
   metricSubText: { fontSize: '12px', fontWeight: '500', opacity: 0.9 },

@@ -42,6 +42,37 @@ const ProfileTab = ({
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Password strength criteria matching backend/index.js
+  const passwordChecks = {
+    length: newPassword.length >= 8,
+    letter: /[A-Za-z]/.test(newPassword),
+    number: /[0-9]/.test(newPassword),
+    special: /[!@#$%^&*(),.?":{}|<>_\-+=~`[\]\\;/']/.test(newPassword),
+  };
+
+  const isPasswordValid =
+    passwordChecks.length &&
+    passwordChecks.letter &&
+    passwordChecks.number &&
+    passwordChecks.special;
+
+  const onPasswordSubmit = (e) => {
+    e.preventDefault();
+    if (!isPasswordValid) {
+      if (setErrorMsg) {
+        setErrorMsg('New password must meet all security requirements.');
+      }
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      if (setErrorMsg) {
+        setErrorMsg('New password and confirm password do not match.');
+      }
+      return;
+    }
+    handleChangePassword(e);
+  };
+
   // Photo එක Select කළ පසු Save කරගැනීමේ Handler එක
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -152,7 +183,7 @@ const ProfileTab = ({
         <div style={styles.settingsMainContent}>
           {profileTab === 'profile' && (
             <>
-              <div style={{ marginBottom: '20px', borderBottom: '1px solid #e2e8f0', pb: '10px' }}>
+              <div style={{ marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
                 <h3 style={styles.contentHeadingLight}>Personal Details</h3>
                 <p style={{ color: '#64748b', fontSize: '13px', margin: 0 }}>Update your personal identification and laboratory contact details.</p>
               </div>
@@ -248,7 +279,7 @@ const ProfileTab = ({
             <>
               <h3 style={styles.contentHeadingLight}>Security & Password</h3>
               <p style={{ color: '#64748b', fontSize: '13px', marginBottom: '20px' }}>Ensure your account is using a strong password to protect your bookings and permissions.</p>
-              <form onSubmit={handleChangePassword} style={{ ...styles.profileForm, maxWidth: '420px' }}>
+              <form onSubmit={onPasswordSubmit} style={{ ...styles.profileForm, maxWidth: '420px' }}>
                 
                 {/* Current Password Field with Eye Icon */}
                 <div style={styles.fieldGroup}>
@@ -290,6 +321,32 @@ const ProfileTab = ({
                       title={showNewPassword ? "Hide password" : "Show password"}
                     >
                       {showNewPassword ? "👁️" : "👁️‍🗨️"}
+                    </span>
+                  </div>
+
+                  {/* Live Password Strength Checklist */}
+                  <div style={{
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
+                    padding: '10px 12px',
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <span style={{ color: passwordChecks.length ? '#16a34a' : '#64748b', fontWeight: passwordChecks.length ? '600' : '400' }}>
+                      {passwordChecks.length ? '✓' : '•'} At least 8 characters
+                    </span>
+                    <span style={{ color: passwordChecks.letter ? '#16a34a' : '#64748b', fontWeight: passwordChecks.letter ? '600' : '400' }}>
+                      {passwordChecks.letter ? '✓' : '•'} At least 1 letter
+                    </span>
+                    <span style={{ color: passwordChecks.number ? '#16a34a' : '#64748b', fontWeight: passwordChecks.number ? '600' : '400' }}>
+                      {passwordChecks.number ? '✓' : '•'} At least 1 number
+                    </span>
+                    <span style={{ color: passwordChecks.special ? '#16a34a' : '#64748b', fontWeight: passwordChecks.special ? '600' : '400' }}>
+                      {passwordChecks.special ? '✓' : '•'} At least 1 special character (!@#$%^&*)
                     </span>
                   </div>
                 </div>

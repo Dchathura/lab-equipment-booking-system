@@ -1,8 +1,102 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { styles } from '../components/DynamicStyles';
 
-const DashboardTab = ({ isAdmin, setActiveTab, handleDownloadReport }) => {
+const DashboardTab = ({ isAdmin, setActiveTab, handleDownloadReport, currentUser }) => {
   const [selectedModule, setSelectedModule] = useState(null);
+  const [bookingNotification, setBookingNotification] = useState(null);
+
+  // 🌟 Monthly Report Generate කර CSV File එක Download කිරීම සඳහා Function එක
+  const handleGenerateMonthlyReport = async () => {
+    try {
+      const response = await fetch('http://localhost:5000/api/reports/monthly', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await response.json();
+
+      if (Array.isArray(data)) {
+        const headers = ['ID', 'Student Name', 'Equipment', 'Serial Number', 'Start Time', 'End Time', 'Status'];
+        const escapeCsv = (val) => {
+          const str = val === null || val === undefined ? '' : String(val);
+          return `"${str.replace(/"/g, '""')}"`;
+        };
+
+        const rows = data.map((row) => [
+          row.id,
+          row.full_name || row.student_name || '',
+          row.equipment || '',
+          row.serial_number || '',
+          row.start_time || '',
+          row.end_time || '',
+          row.status || ''
+        ].map(escapeCsv).join(','));
+
+        const csvContent = '\uFEFF' + [headers.map(escapeCsv).join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        const now = new Date();
+        const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `monthly_report_${yearMonth}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        alert(`Monthly Report Generated Successfully! Total records this month: ${data.length}`);
+      } else {
+        alert(data?.error || 'Failed to generate monthly report.');
+      }
+    } catch (err) {
+      console.error("Monthly report error:", err);
+      alert('Error while generating monthly report.');
+    }
+  };
+
+  // 🌟 Student කෙනෙකුගේ Booking එකක End time එකට පැය 12ක් හෝ අඩු කාලයක් තිබේ නම් Real-time Notification පෙන්වීම
+  useEffect(() => {
+    if (!currentUser || currentUser.role === 'ADMIN') return;
+
+    const checkBookingReminders = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/api/bookings', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const bookings = await response.json();
+
+        if (Array.isArray(bookings)) {
+          const userBookings = bookings.filter(
+            b => b.user_id === currentUser.id && b.status === 'APPROVED'
+          );
+
+          const now = new Date();
+
+          for (const booking of userBookings) {
+            const endTime = new Date(booking.end_time);
+            const timeDiff = endTime - now; 
+            const hoursLeft = timeDiff / (1000 * 60 * 60);
+
+            // පැය 0 ට වැඩි සහ පැය 12 ට අඩු නම් පමණක් Popup එක පෙන්වීම
+            if (hoursLeft > 0 && hoursLeft <= 12) {
+              setBookingNotification({
+                title: '⏰ Booking Return Reminder!',
+                message: `Your booking for "${booking.equipment}" is ending in about ${Math.ceil(hoursLeft)} hours. Please ensure timely return!`,
+              });
+              break; 
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Notification check error:", err);
+      }
+    };
+
+    checkBookingReminders();
+    // සෑම විනාඩි 5කට වරක්ම ස්වයංක්‍රීයව පරීක්ෂා කිරීම
+    const interval = setInterval(checkBookingReminders, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   const moduleDetails = [
     {
@@ -121,10 +215,19 @@ const DashboardTab = ({ isAdmin, setActiveTab, handleDownloadReport }) => {
               <span>→</span>
             </button>
             {isAdmin && (
-              <button onClick={handleDownloadReport} style={{ ...styles.primaryBtn, backgroundColor: '#059669', width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>📊 Generate Daily Report</span>
-                <span>↓</span>
-              </button>
+              <>
+                <button onClick={handleDownloadReport} style={{ ...styles.primaryBtn, backgroundColor: '#059669', width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>📊 Generate Daily Report</span>
+                  <span>↓</span>
+                </button>
+                <button 
+                  onClick={handleGenerateMonthlyReport} 
+                  style={{ ...styles.primaryBtn, backgroundColor: '#0d9488', width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}
+                >
+                  <span>📈 Generate Monthly Report</span>
+                  <span>↓</span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -191,6 +294,41 @@ const DashboardTab = ({ isAdmin, setActiveTab, handleDownloadReport }) => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 🌟 Real-time 12-Hour Booking Return Reminder Toast Popup */}
+      {bookingNotification && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: '#ffffff',
+          borderLeft: '5px solid #d97706',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2)',
+          padding: '16px 20px',
+          borderRadius: '12px',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '14px',
+          maxWidth: '380px',
+        }}>
+          <span style={{ fontSize: '24px' }}>🔔</span>
+          <div style={{ flex: 1 }}>
+            <h4 style={{ margin: '0 0 4px 0', color: '#b45309', fontSize: '15px', fontWeight: 'bold' }}>
+              {bookingNotification.title}
+            </h4>
+            <p style={{ margin: 0, color: '#475569', fontSize: '13px', lineHeight: '1.4' }}>
+              {bookingNotification.message}
+            </p>
+          </div>
+          <button 
+            onClick={() => setBookingNotification(null)}
+            style={{ background: 'transparent', border: 'none', fontSize: '16px', cursor: 'pointer', color: '#94a3b8' }}
+          >
+            ✕
+          </button>
         </div>
       )}
     </>

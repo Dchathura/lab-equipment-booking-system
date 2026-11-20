@@ -20,6 +20,12 @@ const ManageUsersTab = ({
   const [showModal, setShowModal] = useState(false);
   const [activeUserName, setActiveUserName] = useState('');
 
+  // 🛡️ ප්‍රධාන Admin ඊමේල් ලිපින ආරක්ෂා කිරීම සඳහා
+  const PROTECTED_ADMIN_EMAILS = ['chathura@gmail.com', 'admin2@gmail.com'];
+  
+  // 👑 Master Admin ඊමේල් ලිපිනය (අනෙක් Admin ලාව Suspend කිරීමේ බලය ඇත්තේ මෙයට පමණි)
+  const MASTER_ADMIN_EMAIL = 'chathura@gmail.com';
+
   const handleUserClick = async (user) => {
     setActiveUserName(user.full_name);
     try {
@@ -76,18 +82,21 @@ const ManageUsersTab = ({
             <th style={styles.thLight}>Email</th>
             <th style={styles.thLight}>Current Role</th>
             <th style={styles.thLight}>Account Status</th>
-            <th style={styles.thLight}>Change Role</th>
             <th style={styles.thLight}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {filteredUsers.length === 0 ? (
             <tr>
-              <td colSpan="7" style={{ ...styles.tdLight, textAlign: 'center' }}>No users match the criteria.</td>
+              <td colSpan="6" style={{ ...styles.tdLight, textAlign: 'center' }}>No users match the criteria.</td>
             </tr>
           ) : (
             filteredUsers.map(u => {
               const isSuspended = userStatusMap[u.id] === 'SUSPENDED';
+              const isProtectedAdmin = PROTECTED_ADMIN_EMAILS.includes(u.email);
+              // Target user Admin කෙනෙක් නම්, දැනට log වී සිටින්නේ Master Admin දැයි බැලීම
+              const canSuspendUser = !(u.role === 'ADMIN' && currentUser?.email !== MASTER_ADMIN_EMAIL);
+
               return (
                 <tr key={u.id} style={styles.tableRowLight}>
                   <td style={styles.tdLight}>#{u.id}</td>
@@ -111,18 +120,23 @@ const ManageUsersTab = ({
                     </span>
                   </td>
                   <td style={styles.tdLight}>
-                    <select value={u.role} onChange={(e) => handleUserRoleChange(u.id, e.target.value)} style={styles.lightRoleSelect} disabled={u.id === currentUser?.id}>
-                      <option value="STUDENT">STUDENT</option>
-                      <option value="ADMIN">ADMIN</option>
-                    </select>
-                  </td>
-                  <td style={styles.tdLight}>
                     {u.id !== currentUser?.id && (
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button onClick={() => toggleUserStatus(u.id)} style={isSuspended ? styles.activateUserBtn : styles.suspendUserBtn}>
-                          {isSuspended ? 'Unblock' : 'Suspend'}
-                        </button>
-                        <button onClick={() => handleDeleteUser(u.id)} style={styles.deleteUserBtn}>🗑️ Delete</button>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {/* 👑 Master Admin ට පමණක් වෙනත් Admin ලාව Suspend කිරීමට ඉඩ දීම */}
+                        {canSuspendUser ? (
+                          <button onClick={() => toggleUserStatus(u.id)} style={isSuspended ? styles.activateUserBtn : styles.suspendUserBtn}>
+                            {isSuspended ? 'Unblock' : 'Suspend'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>🔒 Master Only</span>
+                        )}
+                        
+                        {/* ප්‍රධාන Admin ලා වෙනත් කෙනෙකුට Delete කිරීමට නොහැකි වන සේ ආරක්ෂා කිරීම */}
+                        {!isProtectedAdmin ? (
+                          <button onClick={() => handleDeleteUser(u.id)} style={styles.deleteUserBtn}>🗑️ Delete</button>
+                        ) : (
+                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>🔒 Protected</span>
+                        )}
                       </div>
                     )}
                   </td>
